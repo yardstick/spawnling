@@ -83,9 +83,7 @@ class Spawnling
     end
     @@punks = []
   end
-  # register to kill marked children when parent exits
-  at_exit { Spawnling.kill_punks }
-
+  
   # Spawns a long-running section of code and returns the ID of the spawned process.
   # By default the process will be a forked process.   To use threading, pass
   # :method => :thread or override the default behavior in the environment by setting
