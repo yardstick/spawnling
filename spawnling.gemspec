@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |s|
   s.name = "spawnling"
-  s.version = "2.1.1"
+  s.version = "2.1.1.1"
   s.required_rubygems_version = ">= 1.3.6"
 
   s.authors = ['Tom Anderson']
