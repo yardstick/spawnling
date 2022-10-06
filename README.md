@@ -1,3 +1,12 @@
+Spawnling
+=========
+
+[![Gem Version](https://badge.fury.io/rb/spawnling.png)](http://badge.fury.io/rb/spawnling)
+[![Build Status](https://travis-ci.org/tra/spawnling.png?branch=master)](https://travis-ci.org/tra/spawnling)
+[![Coverage Status](https://coveralls.io/repos/tra/spawnling/badge.png)](https://coveralls.io/r/tra/spawnling)
+[![Dependency Status](https://gemnasium.com/tra/spawnling.png)](https://gemnasium.com/tra/spawnling)
+[![Code Climate](https://codeclimate.com/github/tra/spawnling.png)](https://codeclimate.com/github/tra/spawnling)
+
 #News
 
 2013-4-15 gem renamed from "spawn-block" (lame) to "spawnling" (awesome).  Sadly the
@@ -87,13 +96,16 @@ The options you can pass to spawn are:
   <tr><td>:kill</td><td>boolean value indicating whether the parent should kill the spawned process
    when it exits (only valid when :method => :fork)</td></tr>
   <tr><td>:argv</td><td>string to override the process name</td></tr>
+  <tr><td>:detach</td><td>boolean value indicating whether the parent should Process.detach the
+   spawned processes. (defaults to true).  You *must* Spawnling.wait or Process.wait if you use this.
+   Changing this allows you to wait for the first child to exit instead of waiting for all of them.</td></tr>
 </table>
 
 Any option to spawn can be set as a default so that you don't have to pass them in
 to every call of spawn.   To configure the spawn default options, add a line to
 your configuration file(s) like this:
 ```ruby
-  Spawnling.default_options {:method => :thread}
+  Spawnling::default_options :method => :thread
 ```
 If you don't set any default options, the :method will default to :fork.  To
 specify different values for different environments, add the default_options call to
@@ -101,9 +113,9 @@ he appropriate environment file (development.rb, test.rb).   For testing you can
 the default :method to :yield so that the code is run inline.
 ```ruby
   # in environment.rb
-  Spawnling.method :method => :fork, :nice => 7
+  Spawnling::default_options :method => :fork, :nice => 7
   # in test.rb, will override the environment.rb setting
-  Spawnling.method :method => :yield
+  Spawnling::default_options :method => :yield
 ```
 This allows you to set your production and development environments to use different
 methods according to your needs.

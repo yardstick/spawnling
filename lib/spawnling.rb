@@ -16,7 +16,8 @@ class Spawnling
     :method => ((RUBY_PLATFORM =~ /(win32|mingw32|java)/) ? :thread : :fork),
     :nice   => nil,
     :kill   => false,
-    :argv   => nil
+    :argv   => nil,
+    :detach => true
   }
 
   # things to close in child process
@@ -27,6 +28,10 @@ class Spawnling
 
   # in some environments, logger isn't defined
   @@logger = defined?(::Rails) ? ::Rails.logger : ::Logger.new(STDERR)
+
+  def self.logger=(logger)
+    @@logger = logger
+  end
 
   attr_accessor :type
   attr_accessor :handle
@@ -42,6 +47,9 @@ class Spawnling
   #   :kill   => whether or not the parent process will kill the
   #              spawned child process when the parent exits
   #   :argv   => changes name of the spawned process as seen in ps
+  #   :detach => whether or not Process.detach is called for spawned child
+  #              processes.  You must wait for children on your own if you
+  #              set this to false
   def self.default_options(options = {})
     @@default_options.merge!(options)
     @@logger.info "spawn> default options = #{options.inspect}" if @@logger
@@ -88,7 +96,11 @@ class Spawnling
   # By default the process will be a forked process.   To use threading, pass
   # :method => :thread or override the default behavior in the environment by setting
   # 'Spawnling::method :thread'.
-  def initialize(opts = {})
+  def initialize(opts = {}, &block)
+    @type, @handle = self.class.run(opts, &block)
+  end
+
+  def self.run(opts = {}, &block)
     raise "Must give block of code to be spawned" unless block_given?
     options = @@default_options.merge(symbolize_options(opts))
     # setting options[:method] will override configured value in default_options[:method]
@@ -98,17 +110,25 @@ class Spawnling
       options[:method].call(proc { yield })
     elsif options[:method] == :thread
       # for versions before 2.2, check for allow_concurrency
-     if RAILS_2_2 || (defined?(ActiveRecord) && ActiveRecord::Base.respond_to?(:allow_concurrency)) ?
-          ActiveRecord::Base.allow_concurrency :  Rails.application.config.allow_concurrency
-       @type = :thread
-       @handle = thread_it(options) { yield }
+     if allow_concurrency?
+       return :thread, thread_it(options) { yield }
       else
         @@logger.error("spawn(:method=>:thread) only allowed when allow_concurrency=true")
         raise "spawn requires config.active_record.allow_concurrency=true when used with :method=>:thread"
       end
     else
-      @type = :fork
-      @handle = fork_it(options) { yield }
+      return :fork, fork_it(options) { yield }
+    end
+  end
+
+  def self.allow_concurrency?
+    return true if RAILS_2_2
+    if defined?(ActiveRecord) && ActiveRecord::Base.respond_to?(:allow_concurrency)
+      ActiveRecord::Base.allow_concurrency
+    elsif defined?(Rails) && Rails.application
+      Rails.application.config.allow_concurrency
+    else
+      true # assume user knows what they are doing
     end
   end
 
@@ -126,12 +146,12 @@ class Spawnling
       end
     end
     # clean up connections from expired threads
-    ActiveRecord::Base.verify_active_connections!() if defined?(ActiveRecord)
+    clean_connections
   end
 
   protected
 
-  def fork_it(options)
+  def self.fork_it(options)
     # The problem with rails is that it only has one connection (per class),
     # so when we fork a new process, we need to reconnect.
     @@logger.debug "spawn> parent PID = #{Process.pid}" if @@logger
@@ -181,7 +201,7 @@ class Spawnling
     end
 
     # detach from child process (parent may still wait for detached process if they wish)
-    Process.detach(child)
+    Process.detach(child) if options[:detach]
 
     # remove dead children from the target list to avoid memory leaks
     @@punks.delete_if {|punk| !Spawn.alive?(punk)}
@@ -196,19 +216,29 @@ class Spawnling
     return child
   end
 
-  def thread_it(options)
+  def self.thread_it(options)
     # clean up stale connections from previous threads
-    ActiveRecord::Base.verify_active_connections!() if defined?(ActiveRecord)
+    clean_connections
     thr = Thread.new do
       # run the long-running code block
-      ActiveRecord::Base.connection_pool.with_connection { yield  } if defined?(ActiveRecord)
+      if defined?(ActiveRecord)
+        ActiveRecord::Base.connection_pool.with_connection { yield }
+      else
+        yield
+      end
     end
     thr.priority = -options[:nice] if options[:nice]
     return thr
   end
 
+  def self.clean_connections
+    return unless defined? ActiveRecord
+    ActiveRecord::Base.verify_active_connections! if ActiveRecord::Base.respond_to?(:verify_active_connections!)
+    ActiveRecord::Base.clear_active_connections! if ActiveRecord::Base.respond_to?(:clear_active_connections!)
+  end
+
   # In case we don't have rails, can't call opts.symbolize_keys
-  def symbolize_options(hash)
+  def self.symbolize_options(hash)
     hash.inject({}) do |new_hash, (key, value)|
       new_hash[key.to_sym] = value
       new_hash

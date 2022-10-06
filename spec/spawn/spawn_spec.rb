@@ -1,63 +1,108 @@
-require File.dirname(__FILE__) + '/../spec_helper'
+require 'spec_helper'
 
-describe Spawn do
+describe Spawnling do
 
   describe "yields" do
     before(:each) do
-      Spawn::method :yield
-      define_spawned
+      Spawnling::default_options :method => :yield
     end
-  
+
+    it "should work in new block" do
+      object = double('object')
+      object.should_receive(:do_something)
+      Spawnling.new do
+        object.do_something
+      end
+    end
+
     it "should be able to yield directly" do
-      Spawned.hello.should == "hello"
+      spawn!.should == "hello"
     end
   end
-  
+
   describe "override" do
     before(:each) do
-      Spawn::method(proc{ "foo" })
-      define_spawned
+      Spawnling::default_options :method => proc{ "foo" }
     end
-    
+
     it "should be able to return a proc" do
-      Spawned.hello.should == "foo"
+      spawn!.should == "foo"
     end
-    
+
   end
-  
+
   describe "delegate to a proc" do
     before(:each) do
-      Spawn::method( proc{ |block| block  })
-      define_spawned
+      Spawnling::default_options :method => proc{ |block| block }
     end
-    
+
     it "should be able to return a proc" do
-      Spawned.hello.should be_kind_of(Proc)
+      spawn!.should be_kind_of(Proc)
     end
-  
+
     it "should be able to return a proc" do
-      Spawned.hello.call.should == "hello"
+      spawn!.call.should == "hello"
     end
-    
   end
-  
-  after(:each) do
-    Object.send(:remove_const, :Spawned)
-  end
-  
-  def define_spawned
-    cls = Class.new do
-      extend Spawn
-    
-      def self.hello
-        spawn do
-          "hello"
-        end
-      end
-      
+
+  describe "thread it" do
+    before(:each) do
+      Store.reset!
+      Spawnling::default_options :method => :thread
     end
-    
-    Object.const_set :Spawned, cls
+
+    it "should be able to return a proc" do
+      Store.flag.should be_falsey
+      spawn_flag!
+      sleep(0.1) # wait for file to finish writing
+      Store.flag.should be_truthy
+    end
+
+    it "instance should have a type" do
+      instance = Spawnling.new{}
+      instance.type.should be(:thread)
+    end
+
+    it "instance should have a handle" do
+      instance = Spawnling.new{}
+      instance.handle.should_not be_nil
+    end
   end
-  
+
+  describe "fork it" do
+    before(:each) do
+      Store.reset!
+      Spawnling::default_options :method => :fork
+    end
+
+    it "should be able to return a proc" do
+      Store.flag.should be_falsey
+      spawn_flag!
+      sleep(0.1) # wait for file to finish writing
+      Store.flag.should be_truthy
+    end
+
+    it "instance should have a type" do
+      instance = Spawnling.new{}
+      instance.type.should be(:fork)
+    end
+
+    it "instance should have a handle" do
+      instance = Spawnling.new{}
+      instance.handle.should_not be_nil
+    end
+  end
+
+  def spawn!
+    Spawnling.run do
+      "hello"
+    end
+  end
+
+  def spawn_flag!
+    Spawnling.new do
+      Store.flag!
+    end
+  end
+
 end
